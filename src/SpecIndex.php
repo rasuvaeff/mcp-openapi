@@ -6,18 +6,16 @@ namespace Rasuvaeff\Mcp\OpenApi;
 
 use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Mcp\OpenApi\Exception\UnknownOperationException;
+use Rasuvaeff\OpenApiContract\Contract;
+use Rasuvaeff\OpenApiContract\ContractException;
+use Rasuvaeff\OpenApiContract\Operation as CompiledOperation;
 
 /**
- * Indexes a decoded OpenAPI 3.x document by operationId. Composed of
- * focused collaborators so trust and resource decisions live in one place
- * each: {@see JsonPointerResolver} inlines local `#/components/...`
- * references under an explicit depth + node budget (external URL/file
- * `$ref`s pass through verbatim), {@see OutputSchemaProjector} derives the
- * MCP `outputSchema` from the success response, and
- * {@see OperationContractValidator} asserts at build time that the
- * parameters fit what the HTTP executor can serialize. The document itself
- * is size-bounded before decoding. Operations without an operationId cannot
- * be bridged and are skipped.
+ * The operations of one OpenAPI document, by operationId. Parsing, references
+ * and schemas are `rasuvaeff/openapi-contract`'s: this class only lists the
+ * declared ids (for the allow-list check and the duplicate check), compiles the
+ * selected operations and projects them onto {@see Operation}. Operations
+ * without an operationId cannot be bridged and are not listed.
  *
  * @internal
  */
@@ -33,11 +31,16 @@ final readonly class SpecIndex
     public const int MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
     /**
-     * @var array<string, Operation>
+     * @var array<string, mixed>
      */
-    private array $operations;
+    private array $document;
 
-    private OperationContractValidator $contract;
+    /**
+     * @var array<non-empty-string, string> operationId => "METHOD /path"
+     */
+    private array $declared;
+
+    private OperationContractValidator $validator;
 
     /**
      * @param array<string, mixed> $spec decoded OpenAPI document
@@ -50,46 +53,56 @@ final readonly class SpecIndex
             throw new InvalidSpecException('OpenAPI document has no paths');
         }
 
-        $resolver = new JsonPointerResolver($spec);
-        $projector = new OutputSchemaProjector($resolver);
-        $this->contract = new OperationContractValidator();
-
-        $operations = [];
+        $bridgeable = [];
+        $declared = [];
         /** @var mixed $pathItem */
         foreach ($paths as $path => $pathItem) {
-            if (!is_string($path) || !is_array($pathItem)) {
+            // Only a "/"-rooted path is bridged: the executors concatenate
+            // baseUrl . path with no separator, so "evil.com/x" would turn
+            // "https://api.test" into another host.
+            if (!is_string($path) || !str_starts_with($path, '/') || !is_array($pathItem)) {
                 continue;
             }
 
-            foreach (self::HTTP_METHODS as $method) {
-                $raw = $pathItem[$method] ?? null;
+            $item = $this->bridgeableItem($pathItem);
+            $bridgeable[$path] = $item;
 
-                if (!is_array($raw)) {
+            foreach (self::HTTP_METHODS as $method) {
+                /** @var mixed $operation */
+                $operation = $item[$method] ?? null;
+                /** @var mixed $operationId */
+                $operationId = is_array($operation) ? $operation['operationId'] ?? null : null;
+
+                if (!is_string($operationId) || $operationId === '') {
                     continue;
                 }
 
-                $operation = $this->buildOperation(path: $path, method: $method, raw: $raw, pathItem: $pathItem, resolver: $resolver, projector: $projector);
+                $where = strtoupper($method) . ' ' . $path;
 
-                if ($operation instanceof Operation) {
-                    if (isset($operations[$operation->operationId])) {
-                        $previous = $operations[$operation->operationId];
-
-                        throw new InvalidSpecException(sprintf(
-                            'Duplicate operationId "%s" for %s %s and %s %s',
-                            $operation->operationId,
-                            $previous->method,
-                            $previous->path,
-                            $operation->method,
-                            $operation->path,
-                        ));
-                    }
-
-                    $operations[$operation->operationId] = $operation;
+                if (isset($declared[$operationId])) {
+                    throw new InvalidSpecException(sprintf('Duplicate operationId "%s" for %s and %s', $operationId, $declared[$operationId], $where));
                 }
+
+                $declared[$operationId] = $where;
             }
         }
 
-        $this->operations = $operations;
+        // The bridge calls base_url with its own credentials, so what the
+        // document says about servers, security and inbound webhooks is not
+        // the bridge's business and must not be able to refuse the document.
+        unset($spec['servers'], $spec['security'], $spec['webhooks']);
+
+        /** @var mixed $components */
+        $components = $spec['components'] ?? null;
+
+        if (is_array($components)) {
+            unset($components['securitySchemes']);
+            $spec['components'] = $components;
+        }
+
+        $this->document = ['paths' => $bridgeable] + $spec;
+        $this->declared = $declared;
+        $this->validator = new OperationContractValidator();
     }
 
     public static function fromJson(string $json): self
@@ -142,166 +155,122 @@ final readonly class SpecIndex
 
     public function get(string $operationId): Operation
     {
-        $operation = $this->operations[$operationId]
-            ?? throw new UnknownOperationException(sprintf(
-                'Operation "%s" is not present in the OpenAPI document; known operations: %s',
-                $operationId,
-                implode(', ', array_keys($this->operations)),
-            ));
-
-        $this->assertValidToolName($operation);
-        $this->contract->validate($operation);
-
-        return $operation;
-    }
-
-    private function assertValidToolName(Operation $operation): void
-    {
-        if (!ToolNameValidator::isValid($operation->operationId)) {
-            throw new InvalidSpecException(sprintf(
-                'Operation "%s" (%s %s) has an operationId that cannot be used as an MCP tool name',
-                $operation->operationId,
-                $operation->method,
-                $operation->path,
-            ));
-        }
+        return $this->select([$operationId])[$operationId];
     }
 
     /**
-     * @param non-empty-string $method
-     * @param array<array-key, mixed> $raw
-     * @param array<array-key, mixed> $pathItem
+     * @param list<string> $operationIds
+     *
+     * @return array<string, Operation>
      */
-    private function buildOperation(string $path, string $method, array $raw, array $pathItem, JsonPointerResolver $resolver, OutputSchemaProjector $projector): ?Operation
+    public function select(array $operationIds): array
     {
-        $operationId = $raw['operationId'] ?? null;
-
-        if (!is_string($operationId) || $operationId === '' || $path === '') {
-            return null;
-        }
-
-        // The OpenAPI spec requires every Path Item Object key to start with
-        // "/"; enforcing that here is not an extra restriction, it rejects a
-        // non-conformant document. It also closes a host-splicing hazard:
-        // HttpOperationExecutor concatenates baseUrl . path with no
-        // separator, so a path lacking the leading slash (e.g. "evil.com/x")
-        // would turn "https://api.test" into "https://api.testevil.com/x" —
-        // a different host entirely.
-        if (!str_starts_with($path, '/')) {
-            return null;
-        }
-
-        $requestBody = $this->arrayOrEmpty($raw['requestBody'] ?? null);
-
-        if ($requestBody !== []) {
-            $requestBody = $resolver->resolve($requestBody);
-        }
-
-        return new Operation(
-            operationId: $operationId,
-            method: strtoupper($method),
-            path: $path,
-            description: $this->stringOrEmpty($raw['description'] ?? $raw['summary'] ?? null),
-            parameters: $this->normalizeParameters($this->arrayOrEmpty($pathItem['parameters'] ?? null), $this->arrayOrEmpty($raw['parameters'] ?? null), $resolver),
-            requestBodySchema: $this->extractRequestBodySchema($requestBody, $resolver),
-            requestBodyRequired: (bool) ($requestBody['required'] ?? false),
-            outputSchema: $projector->project($this->arrayOrEmpty($raw['responses'] ?? null)),
-            tags: $this->extractTags($raw['tags'] ?? null),
-        );
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function extractTags(mixed $tags): array
-    {
-        if (!is_array($tags)) {
+        if ($operationIds === []) {
             return [];
         }
 
-        $named = [];
+        $selected = [];
 
-        /** @var mixed $tag */
-        foreach ($tags as $tag) {
-            if (is_string($tag) && $tag !== '') {
-                $named[] = $tag;
+        foreach ($operationIds as $operationId) {
+            if ($operationId === '' || !isset($this->declared[$operationId])) {
+                throw new UnknownOperationException(sprintf(
+                    'Operation "%s" is not present in the OpenAPI document; known operations: %s',
+                    $operationId,
+                    implode(', ', array_keys($this->declared)),
+                ));
             }
+
+            if (!ToolNameValidator::isValid($operationId)) {
+                throw new InvalidSpecException(sprintf(
+                    'Operation "%s" (%s) has an operationId that cannot be used as an MCP tool name',
+                    $operationId,
+                    $this->declared[$operationId],
+                ));
+            }
+
+            $selected[] = $operationId;
         }
 
-        return $named;
-    }
+        try {
+            $contract = Contract::fromArray($this->document, only: $selected);
+        } catch (ContractException $e) {
+            throw new InvalidSpecException($e->getMessage(), $e->getCode(), previous: $e);
+        }
 
-    private function stringOrEmpty(mixed $value): string
-    {
-        return is_string($value) ? $value : '';
+        $operations = [];
+
+        foreach ($selected as $operationId) {
+            $operation = $this->project($operationId, $contract->operation($operationId));
+            $this->validator->validate($operation);
+            $operations[$operationId] = $operation;
+        }
+
+        return $operations;
     }
 
     /**
+     * @param array<array-key, mixed> $pathItem
+     *
      * @return array<array-key, mixed>
      */
-    private function arrayOrEmpty(mixed $value): array
+    private function bridgeableItem(array $pathItem): array
     {
-        return is_array($value) ? $value : [];
+        unset($pathItem['servers']);
+
+        foreach (self::HTTP_METHODS as $method) {
+            /** @var mixed $operation */
+            $operation = $pathItem[$method] ?? null;
+
+            if (!is_array($operation)) {
+                unset($pathItem[$method]);
+
+                continue;
+            }
+
+            unset($operation['servers'], $operation['security']);
+
+            // a document may say nothing about responses: the bridge then has
+            // no output schema, it is not a reason to refuse the operation
+            $operation += ['responses' => ['default' => []]];
+            $pathItem[$method] = $operation;
+        }
+
+        return $pathItem;
     }
 
     /**
-     * @param array<array-key, mixed> $pathLevel
-     * @param array<array-key, mixed> $operationLevel
-     *
-     * @return list<array{name: non-empty-string, in: 'path'|'query'|'header'|'cookie', required: bool, schema: array<array-key, mixed>, description: string, style: ?string, explode: ?bool, allowReserved: bool}>
+     * @param non-empty-string $operationId
      */
-    private function normalizeParameters(array $pathLevel, array $operationLevel, JsonPointerResolver $resolver): array
+    private function project(string $operationId, CompiledOperation $compiled): Operation
     {
-        $normalized = [];
-        /** @var mixed $raw */
-        foreach ([...$pathLevel, ...$operationLevel] as $raw) {
-            if (!is_array($raw)) {
-                continue;
-            }
+        $defs = new LocalDefinitions();
+        $parameters = [];
 
-            $raw = $resolver->resolve($raw);
-            $name = $raw['name'] ?? null;
-            $in = $raw['in'] ?? null;
-            /** @var mixed $rawStyle */
-            $rawStyle = $raw['style'] ?? null;
-            /** @var mixed $rawExplode */
-            $rawExplode = $raw['explode'] ?? null;
-
-            if (!is_string($name) || $name === '' || !in_array($in, ['path', 'query', 'header', 'cookie'], strict: true)) {
-                continue;
-            }
-
-            // operation-level parameters override path-level ones with the same name+in
-            $normalized[$in . ':' . $name] = [
-                'name' => $name,
-                'in' => $in,
-                'required' => $in === 'path' || (bool) ($raw['required'] ?? false),
-                'schema' => $resolver->resolve($this->arrayOrEmpty($raw['schema'] ?? null)),
-                'description' => $this->stringOrEmpty($raw['description'] ?? null),
-                'style' => is_string($rawStyle) ? $rawStyle : null,
-                'explode' => is_bool($rawExplode) ? $rawExplode : null,
-                'allowReserved' => ($raw['allowReserved'] ?? false) === true,
+        foreach ($compiled->parameters as $parameter) {
+            $parameters[] = [
+                'name' => $parameter['name'],
+                'in' => $parameter['in'],
+                'required' => $parameter['required'],
+                'schema' => $defs->inline($parameter['schema']),
+                'description' => $parameter['description'] ?? '',
+                'style' => $parameter['style'],
+                'explode' => $parameter['explode'],
+                'allowReserved' => $parameter['allowReserved'],
             ];
         }
 
-        return array_values($normalized);
-    }
+        $body = $compiled->requestBody['content']['application/json']['schema'] ?? null;
 
-    /**
-     * @param array<array-key, mixed> $body
-     *
-     * @return array<array-key, mixed>|null
-     */
-    private function extractRequestBodySchema(array $body, JsonPointerResolver $resolver): ?array
-    {
-        if ($body === []) {
-            return null;
-        }
-
-        $content = $this->arrayOrEmpty($body['content'] ?? null);
-        $json = $this->arrayOrEmpty($content['application/json'] ?? null);
-        $schema = $this->arrayOrEmpty($json['schema'] ?? null);
-
-        return $schema === [] ? null : $resolver->resolve($schema);
+        return new Operation(
+            operationId: $operationId,
+            method: $compiled->method === '' ? throw new \LogicException('Compiled operation has no method') : $compiled->method,
+            path: $compiled->path === '' ? throw new \LogicException('Compiled operation has no path') : $compiled->path,
+            description: $compiled->description ?? $compiled->summary ?? '',
+            parameters: $parameters,
+            requestBodySchema: is_array($body) && $body !== [] ? $defs->inline($body) : null,
+            requestBodyRequired: $compiled->requestBody['required'] ?? false,
+            outputSchema: (new OutputSchemaProjector($defs))->project($compiled->responses),
+            tags: $compiled->tags,
+        );
     }
 }

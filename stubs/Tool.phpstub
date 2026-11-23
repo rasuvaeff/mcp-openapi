@@ -16,12 +16,12 @@ class Tool implements \JsonSerializable
     /**
      * @param string $name
      * @param ?string $title
-     * @param array{type: 'object', properties: array<string, mixed>|\stdClass, required?: list<string>|null} $inputSchema
+     * @param array{type: 'object', properties: array<string, mixed>|\stdClass, required?: list<string>|null, '$defs'?: array<array-key, mixed>} $inputSchema
      * @param ?string $description
      * @param ?ToolAnnotations $annotations
      * @param list<Icon>|null $icons
      * @param array<string, mixed>|null $meta
-     * @param array{type: 'object', properties?: array<string, mixed>, required?: list<string>|null, additionalProperties?: bool|array<string, mixed>, description?: string}|null $outputSchema
+     * @param array{type: 'object', properties?: array<string, mixed>, required?: list<string>|null, additionalProperties?: bool|array<string, mixed>, description?: string, '$defs'?: array<array-key, mixed>}|null $outputSchema
      */
     public function __construct(
         public readonly string $name,

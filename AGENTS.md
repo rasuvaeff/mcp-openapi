@@ -36,6 +36,11 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 ## Invariants & gotchas
 
+- **OpenAPI semantics belong to `rasuvaeff/openapi-contract`.** `SpecIndex` lists
+  operationIds, strips what is not the bridge's business (`servers`, `security`,
+  `webhooks`, security schemes) and projects compiled operations; it must not parse
+  schemas or references. `LocalDefinitions` only undoes the compiler's `$defs`
+  sharing so tool schemas stay readable to clients that do not follow references.
 - **Local 6.0 work before `rasuvaeff/mcp` is published** uses
   `COMPOSER=composer.local.json` (untracked, path repository on `../mcp`).
 - **The two OpenAPI executors share `OperationRequestBuilder` and
@@ -200,13 +205,11 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `psalm.xml`), NOT by a suppression: the stub declares the honest accepted
   type (`array<string, mixed>|\stdClass` for `properties`). Revisit the stub
   whenever the SDK pin moves.
-- **Six classes are covered by property tests, and the properties are the
+- **Some classes are covered by property tests, and the properties are the
   contract — not the examples.** `Utf8::cut()` (budget, encodability, prefix
   relation), `OpenApi\ToolNameValidator` (charset + length; stated
   independently of the class's own regex, which is what makes it able to catch
-  a `\z` → `$` regression), `OpenApi\JsonPointerResolver` (depth/cycle
-  termination — `timeoutMs` is mandatory there, a hung guard must fail CI, not
-  hang it), `Interceptor\ArgumentMasker` (idempotence, no sensitive value at
+  a `\z` → `$` regression; the only one in this package), `Interceptor\ArgumentMasker` (idempotence, no sensitive value at
   any depth, structure preserved), `Visibility\DeclarativeToolVisibility`
   (deny beats allow, monotonicity) and `Interceptor\ToolCallBudgetInterceptor`
   (model-based for both eras: `tests/Support/SessionBudget/` and

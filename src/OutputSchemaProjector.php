@@ -21,13 +21,13 @@ namespace Rasuvaeff\Mcp\OpenApi;
 final readonly class OutputSchemaProjector
 {
     public function __construct(
-        private JsonPointerResolver $resolver,
+        private LocalDefinitions $definitions,
     ) {}
 
     /**
      * @param array<array-key, mixed> $responses
      *
-     * @return array{type: 'object', properties?: array<string, mixed>, required?: list<string>, additionalProperties?: array<string, mixed>|bool, description?: string}|null
+     * @return array{type: 'object', properties?: array<string, mixed>, required?: list<string>, additionalProperties?: array<string, mixed>|bool, description?: string, '$defs'?: array<array-key, mixed>}|null
      */
     public function project(array $responses): ?array
     {
@@ -43,7 +43,7 @@ final readonly class OutputSchemaProjector
             return null;
         }
 
-        $response = $this->resolver->resolve($this->arrayOrEmpty($responses[min($codes)] ?? null));
+        $response = $this->arrayOrEmpty($responses[min($codes)] ?? null);
         $content = $this->arrayOrEmpty($response['content'] ?? null);
         $json = $this->arrayOrEmpty($content['application/json'] ?? null);
         $schema = $this->arrayOrEmpty($json['schema'] ?? null);
@@ -52,6 +52,7 @@ final readonly class OutputSchemaProjector
             return null;
         }
 
+        $schema = $this->definitions->inline($schema);
         $output = ['type' => 'object'];
         /** @var mixed $properties */
         $properties = $schema['properties'] ?? null;
@@ -112,6 +113,13 @@ final readonly class OutputSchemaProjector
             if ($nested !== []) {
                 $output['additionalProperties'] = $nested;
             }
+        }
+
+        /** @var mixed $defs */
+        $defs = $schema['$defs'] ?? null;
+
+        if (is_array($defs)) {
+            $output['$defs'] = $defs;
         }
 
         /** @var mixed $description */

@@ -353,7 +353,7 @@ final class OpenApiServerConfiguratorTest
     {
         $factory = new Psr17Factory();
         $configurator = new OpenApiServerConfigurator(
-            spec: new SpecIndex([
+            spec: new SpecIndex(['openapi' => '3.1.0',
                 'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['catalog', 'read-only']]]],
             ]),
             executor: new HttpOperationExecutor(

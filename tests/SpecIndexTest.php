@@ -6,7 +6,7 @@ namespace Rasuvaeff\Mcp\OpenApi\Tests;
 
 use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
 use Rasuvaeff\Mcp\OpenApi\Exception\UnknownOperationException;
-use Rasuvaeff\Mcp\OpenApi\JsonPointerResolver;
+use Rasuvaeff\Mcp\OpenApi\LocalDefinitions;
 use Rasuvaeff\Mcp\OpenApi\Operation;
 use Rasuvaeff\Mcp\OpenApi\OperationContractValidator;
 use Rasuvaeff\Mcp\OpenApi\OutputSchemaProjector;
@@ -24,7 +24,7 @@ use Testo\Test;
 #[Covers(SpecIndex::class)]
 #[Covers(InvalidSpecException::class)]
 #[Covers(UnknownOperationException::class)]
-#[Covers(JsonPointerResolver::class)]
+#[Covers(LocalDefinitions::class)]
 #[Covers(Operation::class)]
 #[Covers(OperationContractValidator::class)]
 #[Covers(OutputSchemaProjector::class)]
@@ -60,7 +60,7 @@ final class SpecIndexTest
 
     public function resolvesRequiredFlagFromReferencedRequestBody(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['post' => [
                 'operationId' => 'op',
                 'requestBody' => ['$ref' => '#/components/requestBodies/Payload'],
@@ -80,7 +80,7 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            new SpecIndex([
+            new SpecIndex(['openapi' => '3.1.0',
                 'paths' => [
                     '/first' => ['get' => ['operationId' => 'duplicate']],
                     '/second' => ['post' => ['operationId' => 'duplicate']],
@@ -96,9 +96,10 @@ final class SpecIndexTest
 
     public function throwsOnUnknownOperation(): void
     {
-        Expect::exception(UnknownOperationException::class);
+        Expect::exception(UnknownOperationException::class)
+            ->withMessage('Operation "nonExistent" is not present in the OpenAPI document; known operations: a, b');
 
-        (new SpecIndex(OpenApiFixture::spec()))->get('nonExistent');
+        (new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => 'a'], 'post' => ['operationId' => 'b']]]]))->get('nonExistent');
     }
 
     public function operationWithoutIdIsNotIndexed(): void
@@ -145,12 +146,12 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            new SpecIndex($spec);
+            (new SpecIndex($spec))->get('createSubscriber');
         } catch (InvalidSpecException $caught) {
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('Unresolvable');
+        Assert::string($caught->getMessage())->contains('Missing');
     }
 
     public function fromJsonReportsInvalidJsonSpecifically(): void
@@ -168,7 +169,7 @@ final class SpecIndexTest
 
     public function numericPathKeyIsSkipped(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '0' => ['get' => ['operationId' => 'zeroOp']],
                 '/ok' => ['get' => ['operationId' => 'okOp']],
@@ -182,7 +183,7 @@ final class SpecIndexTest
 
     public function nonArrayPathItemIsSkipped(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/garbage' => 'not-a-path-item',
                 '/ok' => ['get' => ['operationId' => 'okOp']],
@@ -194,7 +195,7 @@ final class SpecIndexTest
 
     public function emptyOperationIdIsNotIndexedEvenWithValidPath(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => ['operationId' => '']],
                 '/ok' => ['get' => ['operationId' => 'okOp']],
@@ -213,7 +214,7 @@ final class SpecIndexTest
         // host ("https://api.test" + "evil.com/x" = "https://api.testevil.com/x").
         // The OpenAPI spec itself requires every Path Item key to start with
         // "/" — this is also just rejecting a non-conformant document.
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 'evil.com/x' => ['get' => ['operationId' => 'op']],
                 '/ok' => ['get' => ['operationId' => 'okOp']],
@@ -227,7 +228,7 @@ final class SpecIndexTest
 
     public function tagsAreExtractedFromTheOperation(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 'reporting']]]],
         ]);
 
@@ -236,14 +237,14 @@ final class SpecIndexTest
 
     public function operationWithoutTagsHasAnEmptyTagsList(): void
     {
-        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => 'op']]]]);
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => 'op']]]]);
 
         Assert::same($index->get('op')->tags, []);
     }
 
     public function nonStringTagEntriesAreDropped(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => ['operationId' => 'op', 'tags' => ['admin', 42, '', null]]]],
         ]);
 
@@ -252,7 +253,7 @@ final class SpecIndexTest
 
     public function descriptionWinsOverSummary(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => [
                     'operationId' => 'op',
@@ -267,7 +268,7 @@ final class SpecIndexTest
 
     public function requestBodyWithoutRequiredFlagIsOptional(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['post' => [
                     'operationId' => 'op',
@@ -283,24 +284,21 @@ final class SpecIndexTest
 
     public function parametersAreNormalizedExactly(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/items/{id}' => [
                     'parameters' => [
-                        ['name' => 'id', 'in' => 'path', 'schema' => ['type' => 'integer']],
+                        ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']],
                         ['name' => 'inherited', 'in' => 'query', 'description' => 'from path level'],
                     ],
                     'get' => [
                         'operationId' => 'richOp',
                         'parameters' => [
-                            // нестроковое имя — отфильтрован
-                            ['name' => 42, 'in' => 'query'],
                             // одноимённый с path-параметром, но другой in — оба должны остаться
                             ['name' => 'id', 'in' => 'query', 'required' => true],
                             // переопределяет path-level запись с тем же in+name
                             ['name' => 'inherited', 'in' => 'query', 'description' => 'overridden'],
-                            // не-scalar required → строгий bool false
-                            ['name' => 'flagless', 'in' => 'query', 'required' => 0],
+                            ['name' => 'flagless', 'in' => 'query'],
                         ],
                     ],
                 ],
@@ -314,8 +312,8 @@ final class SpecIndexTest
                 'required' => true,
                 'schema' => ['type' => 'integer'],
                 'description' => '',
-                'style' => null,
-                'explode' => null,
+                'style' => 'simple',
+                'explode' => false,
                 'allowReserved' => false,
             ],
             [
@@ -324,8 +322,8 @@ final class SpecIndexTest
                 'required' => false,
                 'schema' => [],
                 'description' => 'overridden',
-                'style' => null,
-                'explode' => null,
+                'style' => 'form',
+                'explode' => true,
                 'allowReserved' => false,
             ],
             [
@@ -334,8 +332,8 @@ final class SpecIndexTest
                 'required' => true,
                 'schema' => [],
                 'description' => '',
-                'style' => null,
-                'explode' => null,
+                'style' => 'form',
+                'explode' => true,
                 'allowReserved' => false,
             ],
             [
@@ -344,8 +342,8 @@ final class SpecIndexTest
                 'required' => false,
                 'schema' => [],
                 'description' => '',
-                'style' => null,
-                'explode' => null,
+                'style' => 'form',
+                'explode' => true,
                 'allowReserved' => false,
             ],
         ]);
@@ -353,7 +351,7 @@ final class SpecIndexTest
 
     public function throwsOnToolNameWithASpace(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => ['operationId' => 'get user']]],
         ]);
 
@@ -370,7 +368,7 @@ final class SpecIndexTest
 
     public function toolNameWithTrailingNewlineIsRejected(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => ['operationId' => "validName\n"]]],
         ]);
 
@@ -382,7 +380,7 @@ final class SpecIndexTest
     public function toolNameAtMaxLengthIsAccepted(): void
     {
         $name = str_repeat('a', 64);
-        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
 
         Assert::same($index->get($name)->operationId, $name);
     }
@@ -390,7 +388,7 @@ final class SpecIndexTest
     public function toolNameBeyondMaxLengthIsRejected(): void
     {
         $name = str_repeat('a', 65);
-        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
 
         Expect::exception(InvalidSpecException::class);
 
@@ -400,7 +398,7 @@ final class SpecIndexTest
     public function toolNameWithAllowedCharsIsAccepted(): void
     {
         $name = 'get.user_by-id/v2';
-        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
 
         Assert::same($index->get($name)->operationId, $name);
     }
@@ -408,7 +406,7 @@ final class SpecIndexTest
     public function toolNameWithUnicodeIsRejected(): void
     {
         $name = 'gëtUser';
-        $index = new SpecIndex(['paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => $name]]]]);
 
         Expect::exception(InvalidSpecException::class);
 
@@ -437,6 +435,19 @@ final class SpecIndexTest
         Assert::same($operation->parameters[0]['schema']['type'], ['null', 'integer']);
     }
 
+    public function aParameterSchemaWithoutATypeThrows(): void
+    {
+        $caught = null;
+
+        try {
+            $this->operationWithParameter(['name' => 'q', 'in' => 'query', 'schema' => ['minLength' => 1]]);
+        } catch (InvalidSpecException $caught) {
+        }
+
+        Assert::notNull($caught);
+        Assert::string($caught->getMessage())->contains('type null is not supported');
+    }
+
     public function unionTypeWithTwoScalarMembersThrows(): void
     {
         Expect::exception(InvalidSpecException::class);
@@ -459,7 +470,7 @@ final class SpecIndexTest
 
     public function unsupportedHeaderParameterFailsWhenOperationIsSelected(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/unsupported' => ['get' => [
                     'operationId' => 'unsupported',
@@ -623,7 +634,7 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            (new SpecIndex([
+            (new SpecIndex(['openapi' => '3.1.0',
                 'paths' => ['/x' => ['get' => [
                     'operationId' => 'op',
                     'parameters' => [
@@ -684,7 +695,7 @@ final class SpecIndexTest
 
     public function refSiblingsSurviveResolution(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['post' => [
                     'operationId' => 'op',
@@ -714,7 +725,7 @@ final class SpecIndexTest
 
     public function jsonPointerEscapesAreDecoded(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => [
                     'operationId' => 'op',
@@ -735,13 +746,6 @@ final class SpecIndexTest
             $this->indexWithRefChainOfLength(32)->get('op')->parameters[0]['schema'],
             ['type' => 'string'],
         );
-    }
-
-    public function refChainBeyondTheLimitThrows(): void
-    {
-        Expect::exception(InvalidSpecException::class);
-
-        $this->indexWithRefChainOfLength(33);
     }
 
     public function deepSchemaNestingWithoutRefsIsNotLimited(): void
@@ -771,7 +775,7 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            new SpecIndex([
+            (new SpecIndex(['openapi' => '3.1.0',
                 'paths' => [
                     '/fan' => ['post' => [
                         'operationId' => 'fanOut',
@@ -779,57 +783,12 @@ final class SpecIndexTest
                     ]],
                 ],
                 'components' => ['schemas' => $components],
-            ]);
+            ]))->get('fanOut');
         } catch (InvalidSpecException $caught) {
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('reference-resolution budget');
-    }
-
-    /**
-     * Exercises JsonPointerResolver::resolve() directly (not through
-     * SpecIndex) for exact control over the node count: a wide, shallow
-     * fan-out — one root plus N leaf-array children, each child a single
-     * resolve() call — avoids the deep RECURSION a chain of the same length
-     * would need (resolve() recurses once per nesting level, so a 100k-deep
-     * chain would risk exhausting the C stack; a 2-level-deep fan-out never
-     * does).
-     */
-    public function nodeBudgetAtTheLimitIsAccepted(): void
-    {
-        $resolver = new JsonPointerResolver([]);
-
-        // 1 (root) + 99_999 (children) = 100_000, exactly MAX_RESOLVED_NODES
-        $node = $this->wideNode(99_999);
-
-        Assert::same($resolver->resolve($node), $node);
-    }
-
-    public function nodeBudgetBeyondTheLimitThrows(): void
-    {
-        $resolver = new JsonPointerResolver([]);
-
-        // 1 (root) + 100_000 (children) = 100_001, one over MAX_RESOLVED_NODES
-        $node = $this->wideNode(100_000);
-
-        Expect::exception(InvalidSpecException::class);
-
-        $resolver->resolve($node);
-    }
-
-    /**
-     * @return array<string, array{leaf: int}>
-     */
-    private function wideNode(int $children): array
-    {
-        $node = [];
-
-        for ($i = 0; $i < $children; ++$i) {
-            $node['c' . $i] = ['leaf' => 1];
-        }
-
-        return $node;
+        Assert::string($caught->getMessage())->contains('schema-inlining budget');
     }
 
     public function oversizedDocumentIsRejectedBeforeDecoding(): void
@@ -927,7 +886,7 @@ final class SpecIndexTest
 
     public function operationWithoutTagsHasNoTags(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => ['operationId' => 'op']]],
         ]);
 
@@ -973,24 +932,37 @@ final class SpecIndexTest
         yield 'null' => ['null'];
     }
 
-    public function aNonArrayParameterEntryDoesNotHideTheOnesAfterIt(): void
+    #[DataProvider('malformedParameterProvider')]
+    public function aMalformedParameterFailsTheOperation(mixed $parameter): void
     {
         $index = new SpecIndex([
-            'paths' => ['/x' => ['get' => [
-                'operationId' => 'op',
-                'parameters' => [
-                    'not a parameter',
-                    ['name' => 'q', 'in' => 'query', 'schema' => ['type' => 'string']],
-                ],
-            ]]],
+            'openapi' => '3.1.0',
+            'paths' => ['/x' => [
+                'get' => ['operationId' => 'op', 'parameters' => [$parameter]],
+                'post' => ['operationId' => 'sound'],
+            ]],
         ]);
 
-        Assert::same(array_column($index->get('op')->parameters, 'name'), ['q']);
+        // the other operation of the same path is not affected
+        Assert::same($index->get('sound')->operationId, 'sound');
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get('op');
+    }
+
+    public static function malformedParameterProvider(): iterable
+    {
+        yield 'not an object' => ['not a parameter'];
+        yield 'empty name' => [['name' => '', 'in' => 'query', 'schema' => ['type' => 'string']]];
+        yield 'numeric name' => [['name' => 42, 'in' => 'query']];
+        yield 'non-boolean required' => [['name' => 'q', 'in' => 'query', 'required' => 0]];
+        yield 'path parameter not in the template' => [['name' => 'id', 'in' => 'path', 'required' => true]];
     }
 
     public function malformedTagsAndAParameterWithoutARequiredKeyIndexWithoutWarnings(): void
     {
-        $index = WarningsAsErrors::around(static fn(): SpecIndex => new SpecIndex([
+        $index = WarningsAsErrors::around(static fn(): SpecIndex => new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => [
                 'operationId' => 'op',
                 'tags' => 'not-a-list',
@@ -1004,24 +976,12 @@ final class SpecIndexTest
         Assert::false($operation->parameters[0]['required']);
     }
 
-    public function parameterWithAnEmptyNameIsSkipped(): void
-    {
-        $index = new SpecIndex([
-            'paths' => ['/x' => ['get' => [
-                'operationId' => 'op',
-                'parameters' => [['name' => '', 'in' => 'query', 'schema' => ['type' => 'string']]],
-            ]]],
-        ]);
-
-        Assert::same($index->get('op')->parameters, []);
-    }
-
-    public function circularRefIsReportedAsTooDeepChain(): void
+    public function aReferenceCycleWithoutASchemaFailsTheOperation(): void
     {
         $caught = null;
 
         try {
-            new SpecIndex([
+            (new SpecIndex(['openapi' => '3.1.0',
                 'paths' => [
                     '/x' => ['get' => [
                         'operationId' => 'op',
@@ -1032,32 +992,105 @@ final class SpecIndexTest
                     'A' => ['$ref' => '#/components/schemas/B'],
                     'B' => ['$ref' => '#/components/schemas/A'],
                 ]],
-            ]);
+            ]))->get('op');
         } catch (InvalidSpecException $caught) {
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('$ref chain is too deep');
     }
 
-    public function selfReferencingSchemaThrows(): void
+    public function aRecursiveSchemaStaysAReferenceWithItsDefinition(): void
     {
-        Expect::exception(InvalidSpecException::class);
-
-        new SpecIndex([
+        $schema = (new SpecIndex([
+            'openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['post' => [
                     'operationId' => 'op',
                     'requestBody' => [
                         'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]],
                     ],
+                    'responses' => ['200' => ['description' => 'ok', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/Node']]]]],
                 ]],
             ],
             'components' => ['schemas' => ['Node' => [
                 'type' => 'object',
                 'properties' => ['child' => ['$ref' => '#/components/schemas/Node']],
             ]]],
+        ]))->get('op');
+
+        foreach ([$schema->requestBodySchema, $schema->outputSchema] as $tool) {
+            $name = array_key_first($tool['$defs'] ?? []);
+            $ref = $tool['$defs'][$name]['properties']['child']['$ref'] ?? null;
+
+            Assert::same($ref, '#/$defs/' . $name);
+        }
+    }
+
+    public function whatTheDocumentSaysAboutServersSecurityAndWebhooksIsIgnored(): void
+    {
+        $servers = [['url' => '{undeclared}://x?y#z']];
+        $index = new SpecIndex([
+            'openapi' => '3.1.0',
+            'servers' => $servers,
+            'security' => [['nowhere' => []]],
+            'webhooks' => ['w' => 'broken'],
+            'paths' => ['/x' => [
+                'servers' => $servers,
+                'get' => ['operationId' => 'op', 'servers' => $servers, 'security' => [['nowhere' => []]]],
+            ]],
+            'components' => ['securitySchemes' => ['bad' => ['type' => 'weird']]],
         ]);
+
+        Assert::same($index->get('op')->path, '/x');
+    }
+
+    public function anUnsupportedOperationDoesNotAffectTheOthers(): void
+    {
+        $index = new SpecIndex([
+            'openapi' => '3.1.0',
+            'paths' => [
+                '/broken' => ['get' => ['operationId' => 'broken', 'requestBody' => ['$ref' => 'https://example.test/x.json']]],
+                '/x' => ['get' => ['operationId' => 'op'], 'post' => 'not-an-operation'],
+            ],
+        ]);
+
+        Assert::same($index->get('op')->operationId, 'op');
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get('broken');
+    }
+
+    public function selectCompilesExactlyTheRequestedOperationsInOrder(): void
+    {
+        $index = new SpecIndex(OpenApiFixture::spec());
+
+        Assert::same(array_keys($index->select(['getCreators', 'getBlogTags', 'getCreators'])), ['getCreators', 'getBlogTags']);
+        Assert::same($index->select([]), []);
+    }
+
+    #[DataProvider('unsupportedVersionProvider')]
+    public function onlyOpenApi30And31AreBridged(array $version): void
+    {
+        $index = new SpecIndex($version + ['paths' => ['/x' => ['get' => ['operationId' => 'op']]]]);
+
+        Expect::exception(InvalidSpecException::class);
+
+        $index->get('op');
+    }
+
+    public static function unsupportedVersionProvider(): iterable
+    {
+        yield 'missing' => [[]];
+        yield 'swagger 2' => [['swagger' => '2.0']];
+        yield '3.2' => [['openapi' => '3.2.0']];
+    }
+
+    public function summaryIsTheDescriptionWhenThereIsNone(): void
+    {
+        $index = new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => ['operationId' => 'op', 'summary' => 'short']]]]);
+
+        Assert::same($index->get('op')->description, 'short');
     }
 
     public function refToScalarLeafThrows(): void
@@ -1065,7 +1098,7 @@ final class SpecIndexTest
         $caught = null;
 
         try {
-            new SpecIndex([
+            (new SpecIndex(['openapi' => '3.1.0',
                 'paths' => [
                     '/x' => ['get' => [
                         'operationId' => 'op',
@@ -1073,17 +1106,16 @@ final class SpecIndexTest
                     ]],
                 ],
                 'components' => ['schemas' => ['Scalar' => 'just-a-string']],
-            ]);
+            ]))->get('op');
         } catch (InvalidSpecException $caught) {
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('must point to an object');
     }
 
     public function externalParameterRefThrowsBecauseScalarTypeCannotBeVerified(): void
     {
-        $index = new SpecIndex([
+        $index = new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => [
                     'operationId' => 'op',
@@ -1195,8 +1227,8 @@ final class SpecIndexTest
             '200' => ['content' => ['application/json' => ['schema' => [
                 'type' => 'object',
                 'description' => 'A tag',
-                'properties' => ['slug' => ['type' => 'string'], 0 => ['type' => 'ignored']],
-                'required' => ['slug', 42],
+                'properties' => ['slug' => ['type' => 'string'], 0 => ['type' => 'integer']],
+                'required' => ['slug'],
                 'additionalProperties' => false,
                 'xml' => ['name' => 'tag'],
                 'example' => ['slug' => 'php'],
@@ -1217,7 +1249,7 @@ final class SpecIndexTest
         $schema = $this->operationWithResponses([
             '200' => ['content' => ['application/json' => ['schema' => [
                 'type' => 'object',
-                'additionalProperties' => ['type' => 'string', 0 => 'dropped-int-key'],
+                'additionalProperties' => ['type' => 'string'],
             ]]]],
         ])->outputSchema;
 
@@ -1281,7 +1313,7 @@ final class SpecIndexTest
             $raw['responses'] = $responses;
         }
 
-        return (new SpecIndex(['paths' => ['/x' => ['get' => $raw]]]))->get('op');
+        return (new SpecIndex(['openapi' => '3.1.0', 'paths' => ['/x' => ['get' => $raw]]]))->get('op');
     }
 
     private function indexWithRefChainOfLength(int $length): SpecIndex
@@ -1291,7 +1323,7 @@ final class SpecIndexTest
             $schemas['S' . $i] = ['$ref' => '#/components/schemas/S' . ($i + 1)];
         }
 
-        return new SpecIndex([
+        return new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => [
                     'operationId' => 'op',
@@ -1307,8 +1339,15 @@ final class SpecIndexTest
      */
     private function operationWithParameter(array $parameter): \Rasuvaeff\Mcp\OpenApi\Operation
     {
-        return (new SpecIndex([
-            'paths' => ['/x' => ['get' => [
+        $path = '/x';
+
+        if ($parameter['in'] === 'path') {
+            $path .= '/{' . $parameter['name'] . '}';
+            $parameter['required'] = true;
+        }
+
+        return (new SpecIndex(['openapi' => '3.1.0',
+            'paths' => [$path => ['get' => [
                 'operationId' => 'op',
                 'parameters' => [$parameter],
             ]]],
@@ -1322,7 +1361,7 @@ final class SpecIndexTest
             $schema = ['type' => 'string', 'allOf' => [$schema]];
         }
 
-        return new SpecIndex([
+        return new SpecIndex(['openapi' => '3.1.0',
             'paths' => [
                 '/x' => ['get' => [
                     'operationId' => 'op',

@@ -54,7 +54,7 @@ final class InputSchemaBuilderTest
 
     public function parameterWithoutSchemaDefaultsToString(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => [
                 'operationId' => 'op',
                 'parameters' => [['name' => 'bare', 'in' => 'query', 'description' => 'no schema at all']],
@@ -71,7 +71,7 @@ final class InputSchemaBuilderTest
 
     public function parameterDescriptionDoesNotOverrideSchemaDescription(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => [
                 'operationId' => 'op',
                 'parameters' => [[
@@ -101,11 +101,11 @@ final class InputSchemaBuilderTest
 
     public function samePathAndQueryParameterNameCannotBeBridged(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/items/{id}' => ['get' => [
                 'operationId' => 'op',
                 'parameters' => [
-                    ['name' => 'id', 'in' => 'path', 'schema' => ['type' => 'integer']],
+                    ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']],
                     ['name' => 'id', 'in' => 'query'],
                 ],
             ]]],
@@ -139,7 +139,7 @@ final class InputSchemaBuilderTest
 
     public function parameterNamedDryRunCollidesWithTheDryRunArgument(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['get' => [
                 'operationId' => 'op',
                 'parameters' => [['name' => 'dryRun', 'in' => 'query']],
@@ -159,7 +159,7 @@ final class InputSchemaBuilderTest
 
     public function parameterNamedBodyCollidesWithRequestBodyArgument(): void
     {
-        $operation = (new SpecIndex([
+        $operation = (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/x' => ['post' => [
                 'operationId' => 'op',
                 'parameters' => [['name' => 'body', 'in' => 'query']],

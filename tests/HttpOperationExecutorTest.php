@@ -879,7 +879,7 @@ final class HttpOperationExecutorTest
 
     private function multiQueryOperation(): Operation
     {
-        return (new SpecIndex([
+        return (new SpecIndex(['openapi' => '3.1.0',
             'paths' => ['/multi' => ['get' => [
                 'operationId' => 'multiOp',
                 'parameters' => [

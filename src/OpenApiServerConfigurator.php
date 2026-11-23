@@ -115,8 +115,7 @@ final readonly class OpenApiServerConfigurator implements ServerConfiguratorInte
         // the attribute tool — it would silently lose itself
         $usedNames = array_fill_keys($this->reservedToolNames, null);
 
-        foreach ($this->operations as $operationId) {
-            $operation = $this->spec->get($operationId);
+        foreach ($this->spec->select($this->operations) as $operationId => $operation) {
 
             if ($this->safeMethodsOnly && $operation->method !== 'GET') {
                 throw new UnsafeOperationException(sprintf(

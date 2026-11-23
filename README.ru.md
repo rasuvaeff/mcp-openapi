@@ -23,6 +23,7 @@
 |---|---|
 | PHP | 8.3 – 8.6 |
 | `rasuvaeff/mcp` | `^0.1` |
+| `rasuvaeff/openapi-contract` | `^0.19` |
 | Реализация PSR-17 | любая |
 | PSR-18 клиент | для HTTP-исполнения или спецификации по URL |
 
@@ -59,7 +60,9 @@ $server = (new McpServerFactory(
 ```
 
 Имя tool — `operationId` (или `toolNames`), описание — `summary`/`description`;
-параметры и JSON-тело запроса становятся аргументами, тело — одним аргументом `body`.
+параметры и JSON-тело запроса становятся аргументами, тело — одним аргументом `body`. Общие
+схемы раскрываются на месте; рекурсивная остаётся ссылкой, её определение лежит в
+`$defs` схемы tool.
 
 ### Исполнение внутри процесса
 
@@ -74,6 +77,9 @@ handler самого приложения без сети; `httpClient` и `requ
 - параметры пути — скаляры, параметры query — скаляры или массивы скаляров;
 - параметры header и cookie, нестандартные `style`/`explode` (кроме массивов в
   query) и `allowReserved` отклоняются;
+- документ — OpenAPI 3.0 или 3.1, его компилирует
+  [`rasuvaeff/openapi-contract`](https://github.com/rasuvaeff/openapi-contract);
+  ссылки только локальные; `servers`, `security` и `webhooks` документа не читаются;
 - тело запроса только `application/json`; документ — JSON до 10 MiB.
 
 ### Компоненты

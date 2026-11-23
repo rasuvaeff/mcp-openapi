@@ -23,6 +23,7 @@ a PSR-18 client (or a PSR-15 handler) and PSR-17 factories are enough. Using Yii
 |---|---|
 | PHP | 8.3 – 8.6 |
 | `rasuvaeff/mcp` | `^0.1` |
+| `rasuvaeff/openapi-contract` | `^0.19` |
 | PSR-17 implementation | any |
 | PSR-18 client | for HTTP execution or a URL spec |
 
@@ -60,7 +61,8 @@ $server = (new McpServerFactory(
 
 A tool is named after its `operationId` (or `toolNames`), described by
 `summary`/`description`; parameters and the JSON request body become arguments,
-the body as one `body` argument.
+the body as one `body` argument. Shared schemas are inlined; a recursive one stays
+a reference with its definition in the tool schema's `$defs`.
 
 ### In-process execution
 
@@ -75,6 +77,9 @@ Checked when the server is built, for the allow-listed operations:
 - path parameters are scalars, query parameters are scalars or arrays of scalars;
 - header and cookie parameters, non-default `style`/`explode` (except for query
   arrays) and `allowReserved` are refused;
+- the document is OpenAPI 3.0 or 3.1, compiled by
+  [`rasuvaeff/openapi-contract`](https://github.com/rasuvaeff/openapi-contract);
+  references must be local; its `servers`, `security` and `webhooks` are ignored;
 - only `application/json` request bodies; the document is JSON up to 10 MiB.
 
 ### Components

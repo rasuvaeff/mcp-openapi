@@ -18,20 +18,18 @@
     //      are counted and iterated into a fresh list; keys never read.
     //    - OperationRequestBuilder.php CastString x2: PHP turns a
     //      numeric-string key into the int key anyway.
-    //    - SpecIndex.php Concat x2, ConcatOperandRemoval
-    //      (`$in . ':' . $name`): $in is one of four values with distinct
-    //      first characters, so no separator choice can collide.
-    //    - SpecIndex.php ReturnRemoval (extractRequestBodySchema):
-    //      every following `?? null` converges on null.
     //
     // Unreachable by constructor/factory invariants:
     //    - OperationRequestBuilder.php LogicalAnd: the constructor
     //      rejects configuring exactly one of identity and delegated.
+    //    - SpecIndex.php Throw_ x2: a compiled path operation always has a method
+    //      and a path; the guards only narrow the type.
+    //    - LocalDefinitions.php TrueValue: only the keys of the map are read.
     //    - OpenApiBridgeFactory.php Throw_ x2: twins of the guards in
     //      create(), which rejects first.
     //
     // Mutants that are only ever "Timed Out" are infinite loops by
-    // construction (JsonPointerResolver budgets, bounded stream readers): the original code is what stops them.
+    // construction (LocalDefinitions worklist, bounded stream readers): the original code is what stops them.
     // Unit only: every package declares a Benchmarks suite (testo.php), and Infection's initial
     // test run would execute it. A timing-sensitive benchmark fails under host load and aborts
     // the whole mutation run (result, 2026-11-03). Benchmarks mutate nothing and kill nothing.

@@ -24,7 +24,7 @@ final readonly class InputSchemaBuilder
     public const string DRY_RUN_ARGUMENT = 'dryRun';
 
     /**
-     * @return array{type: 'object', properties: array<string, mixed>|\stdClass, required: list<string>}
+     * @return array{type: 'object', properties: array<string, mixed>|\stdClass, required: list<string>, '$defs'?: array<array-key, mixed>}
      */
     public function build(
         Operation $operation,
@@ -32,6 +32,7 @@ final readonly class InputSchemaBuilder
     ): array {
         $properties = [];
         $required = [];
+        $defs = [];
 
         foreach ($operation->parameters as $parameter) {
             $schema = $parameter['schema'] === [] ? ['type' => 'string'] : $parameter['schema'];
@@ -48,7 +49,7 @@ final readonly class InputSchemaBuilder
                 ));
             }
 
-            $properties[$parameter['name']] = $schema;
+            $properties[$parameter['name']] = $this->hoist($schema, $defs);
 
             if ($parameter['required']) {
                 $required[] = $parameter['name'];
@@ -64,7 +65,7 @@ final readonly class InputSchemaBuilder
                 ));
             }
 
-            $properties[self::BODY_ARGUMENT] = $operation->requestBodySchema;
+            $properties[self::BODY_ARGUMENT] = $this->hoist($operation->requestBodySchema, $defs);
 
             if ($operation->requestBodyRequired) {
                 $required[] = self::BODY_ARGUMENT;
@@ -96,6 +97,30 @@ final readonly class InputSchemaBuilder
             'type' => 'object',
             'properties' => $properties === [] ? new \stdClass() : $properties,
             'required' => $required,
+            ...$defs === [] ? [] : ['$defs' => $defs],
         ];
+    }
+
+    /**
+     * `#/$defs/…` resolves against the ROOT of the tool schema, so recursive
+     * definitions move there. A name is the component's own pointer: two
+     * schemas of one operation that share a name share the component.
+     *
+     * @param array<array-key, mixed> $schema
+     * @param array<array-key, mixed> $defs
+     *
+     * @return array<array-key, mixed>
+     */
+    private function hoist(array $schema, array &$defs): array
+    {
+        /** @var mixed $own */
+        $own = $schema['$defs'] ?? null;
+
+        if (is_array($own)) {
+            $defs = [...$defs, ...$own];
+            unset($schema['$defs']);
+        }
+
+        return $schema;
     }
 }
