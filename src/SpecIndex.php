@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Mcp\OpenApi;
 
 use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
+use Rasuvaeff\Mcp\OpenApi\Exception\SchemaBudgetExceededException;
 use Rasuvaeff\Mcp\OpenApi\Exception\UnknownOperationException;
 use Rasuvaeff\OpenApiContract\Contract;
 use Rasuvaeff\OpenApiContract\ContractException;
@@ -200,7 +201,12 @@ final readonly class SpecIndex
         $operations = [];
 
         foreach ($selected as $operationId) {
-            $operation = $this->project($operationId, $contract->operation($operationId));
+            try {
+                $operation = $this->project($operationId, $contract->operation($operationId));
+            } catch (SchemaBudgetExceededException $e) {
+                throw new InvalidSpecException(sprintf('Operation "%s": %s', $operationId, $e->getMessage()), $e->getCode(), previous: $e);
+            }
+
             $this->validator->validate($operation);
             $operations[$operationId] = $operation;
         }
@@ -269,7 +275,7 @@ final readonly class SpecIndex
             parameters: $parameters,
             requestBodySchema: is_array($body) && $body !== [] ? $defs->inline($body) : null,
             requestBodyRequired: $compiled->requestBody['required'] ?? false,
-            outputSchema: (new OutputSchemaProjector($defs))->project($compiled->responses),
+            outputSchema: (new OutputSchemaProjector())->project($compiled->responses),
             tags: $compiled->tags,
         );
     }

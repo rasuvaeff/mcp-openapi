@@ -9,6 +9,7 @@
   - recursive schemas are bridged (5.x refused the whole document);
   - a keyword beside a `$ref` that the target also declares is combined through
     `allOf` instead of replacing the target's;
+  - a response schema too large to inline is not advertised as `outputSchema`;
   - a broken operation that is not selected no longer refuses the document;
   - refused now: a document that is not OpenAPI 3.0/3.1 (including a missing
     `openapi`), an external `$ref`, a path parameter that is not `required: true` or

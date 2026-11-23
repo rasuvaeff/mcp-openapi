@@ -753,6 +753,33 @@ final class SpecIndexTest
         Assert::same($this->indexWithSchemaOfDepth(40)->get('op')->operationId, 'op');
     }
 
+    public function aResponseTooLargeToInlineIsNotAdvertised(): void
+    {
+        $schemas = ['leaf' => ['type' => 'object', 'properties' => ['x' => ['type' => 'string']]]];
+        $previous = 'leaf';
+
+        foreach (['l1', 'l2', 'l3', 'l4'] as $level) {
+            $schemas[$level] = ['type' => 'object', 'properties' => array_fill_keys(
+                array_map(static fn(int $i): string => 'p' . $i, range(0, 19)),
+                ['$ref' => '#/components/schemas/' . $previous],
+            )];
+            $previous = $level;
+        }
+
+        $operation = (new SpecIndex([
+            'openapi' => '3.1.0',
+            'paths' => ['/x' => ['post' => [
+                'operationId' => 'op',
+                'requestBody' => ['content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/leaf']]]],
+                'responses' => ['200' => ['description' => 'ok', 'content' => ['application/json' => ['schema' => ['$ref' => '#/components/schemas/l4']]]]],
+            ]]],
+            'components' => ['schemas' => $schemas],
+        ]))->get('op');
+
+        Assert::null($operation->outputSchema);
+        Assert::same($operation->requestBodySchema, $schemas['leaf']);
+    }
+
     public function refFanOutBeyondTheNodeBudgetIsRejected(): void
     {
         // a compact document whose shared schemas EXPAND combinatorially:
@@ -788,7 +815,7 @@ final class SpecIndexTest
         }
 
         Assert::notNull($caught);
-        Assert::string($caught->getMessage())->contains('schema-inlining budget');
+        Assert::string($caught->getMessage())->contains('Operation "fanOut": ')->contains('schema-inlining budget');
     }
 
     public function oversizedDocumentIsRejectedBeforeDecoding(): void

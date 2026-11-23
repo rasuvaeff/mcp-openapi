@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Mcp\OpenApi;
 
+use Rasuvaeff\Mcp\OpenApi\Exception\SchemaBudgetExceededException;
+
 /**
  * Projects an operation's OpenAPI success response onto the MCP tool
  * `outputSchema` shape: the lowest concrete 2xx response with an
@@ -20,10 +22,6 @@ namespace Rasuvaeff\Mcp\OpenApi;
  */
 final readonly class OutputSchemaProjector
 {
-    public function __construct(
-        private LocalDefinitions $definitions,
-    ) {}
-
     /**
      * @param array<array-key, mixed> $responses
      *
@@ -52,7 +50,15 @@ final readonly class OutputSchemaProjector
             return null;
         }
 
-        $schema = $this->definitions->inline($schema);
+        // Advertising is optional, so a response too large to inline (an API that
+        // embeds its whole model) costs the advertisement, not the operation.
+        // Its own budget: the arguments must not pay for the response.
+        try {
+            $schema = (new LocalDefinitions())->inline($schema);
+        } catch (SchemaBudgetExceededException) {
+            return null;
+        }
+
         $output = ['type' => 'object'];
         /** @var mixed $properties */
         $properties = $schema['properties'] ?? null;

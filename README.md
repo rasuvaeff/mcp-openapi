@@ -62,7 +62,8 @@ $server = (new McpServerFactory(
 A tool is named after its `operationId` (or `toolNames`), described by
 `summary`/`description`; parameters and the JSON request body become arguments,
 the body as one `body` argument. Shared schemas are inlined; a recursive one stays
-a reference with its definition in the tool schema's `$defs`.
+a reference with its definition in the tool schema's `$defs`. A response schema too
+large to inline is not advertised as `outputSchema`.
 
 ### In-process execution
 

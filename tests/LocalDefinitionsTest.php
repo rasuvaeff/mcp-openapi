@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Mcp\OpenApi\Tests;
 
 use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
+use Rasuvaeff\Mcp\OpenApi\Exception\SchemaBudgetExceededException;
 use Rasuvaeff\Mcp\OpenApi\InputSchemaBuilder;
 use Rasuvaeff\Mcp\OpenApi\LocalDefinitions;
 use Rasuvaeff\Mcp\OpenApi\Operation;
@@ -15,6 +16,7 @@ use Testo\Test;
 
 #[Test]
 #[Covers(LocalDefinitions::class)]
+#[Covers(SchemaBudgetExceededException::class)]
 #[Covers(InputSchemaBuilder::class)]
 final class LocalDefinitionsTest
 {
@@ -110,7 +112,7 @@ final class LocalDefinitionsTest
 
         Assert::same(count($definitions->inline($schema)['anyOf']), 99_998);
 
-        Expect::exception(InvalidSpecException::class);
+        Expect::exception(SchemaBudgetExceededException::class);
 
         $definitions->inline(['type' => 'string', '$defs' => []]);
     }

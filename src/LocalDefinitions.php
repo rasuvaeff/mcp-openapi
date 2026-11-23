@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Rasuvaeff\Mcp\OpenApi;
 
 use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
+use Rasuvaeff\Mcp\OpenApi\Exception\SchemaBudgetExceededException;
 
 /**
  * A compiled schema keeps shared components under its own `$defs`. A tool
@@ -12,7 +13,7 @@ use Rasuvaeff\Mcp\OpenApi\Exception\InvalidSpecException;
  * all follow references, so every definition is inlined where it is used; only
  * a recursive one stays a `$ref`, with its definition at the schema root.
  *
- * Not readonly: the node budget is shared by every schema of one operation.
+ * Not readonly: the node budget is shared by every schema one instance inlines.
  *
  * @internal
  */
@@ -66,7 +67,7 @@ final class LocalDefinitions
     private function walk(array $node, array $defs, array $open, array &$recursive): array
     {
         if (++$this->nodes > self::MAX_NODES) {
-            throw new InvalidSpecException(sprintf('OpenAPI operation exceeds the schema-inlining budget of %d nodes', self::MAX_NODES));
+            throw new SchemaBudgetExceededException(sprintf('OpenAPI operation exceeds the schema-inlining budget of %d nodes', self::MAX_NODES));
         }
 
         /** @var mixed $ref */

@@ -51,7 +51,8 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   name. description = summary/description, inputSchema
   from path/query parameters (+ `body` argument for application/json
   requestBody). Local `#/components/...` $refs are resolved inline, a
-  recursive schema keeps its $ref with a $defs entry; external $refs are refused.
+  recursive schema keeps its $ref with a $defs entry; external $refs are refused. A
+  response too large to inline gets no outputSchema.
 - outputSchema is advertised in tools/list when the operation's lowest
   concrete 2xx response has an application/json schema of type "object"
   (OpenAPI 3.1's `type: ["object", "null"]` accepted the same way; $refs
