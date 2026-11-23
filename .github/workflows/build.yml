@@ -1,0 +1,290 @@
+name: build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Relevant changes
+    runs-on: ubuntu-latest
+
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+      mutation: ${{ steps.filter.outputs.mutation }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$BASE_SHA"
+          elif [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "mutation=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            BASE="$BEFORE_SHA"
+          fi
+
+          if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+            src tests config examples composer.json testo.php psalm.xml \
+            CHANGELOG.md \
+            rector.php .php-cs-fixer.php infection.json5 \
+            .github/workflows/build.yml; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Narrower than `run` on purpose: only these files change which
+          # mutants exist or which tests kill them. Docs, examples, psalm.xml,
+          # rector.php and this workflow itself must not cost a full mutation
+          # run. Accepted trade-off: editing the mutation step below no longer
+          # re-runs mutations.
+          if git diff --quiet "$BASE" "$GITHUB_SHA" -- \
+            src tests composer.json testo.php infection.json5; then
+            echo "mutation=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "mutation=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php:
+          - '8.3'
+          - '8.4'
+          - '8.5'
+          - '8.6'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          extensions: json, mbstring, fileinfo
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      # roave/backward-compatibility-check and maglnet/composer-require-checker
+      # pin "php": "~8.4.0 || ~8.5.0", so on 8.6 they are dropped instead of
+      # installing everything with --ignore-platform-req (which would also hide
+      # a real runtime dependency that refuses 8.6). Neither is needed here:
+      # the BC check has its own job, require-checker runs on 8.3-8.5. Remove
+      # this step once both allow 8.6. See docs/php-8.6-rollout-status.md.
+      - name: Drop dev tools without PHP 8.6 support
+        if: ${{ matrix.php == '8.6' }}
+        run: >-
+          composer remove --dev --no-update --no-interaction
+          roave/backward-compatibility-check maglnet/composer-require-checker
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Build
+        if: ${{ matrix.php != '8.6' }}
+        run: composer build
+
+      # `composer build` minus cs (php-cs-fixer refuses 8.6 syntax) and minus
+      # require-checker (dropped above). Style and require-checker are covered
+      # by the 8.3-8.5 jobs. Switch to `composer build` once both support 8.6.
+      - name: Build (PHP 8.6)
+        if: ${{ matrix.php == '8.6' }}
+        run: |
+          composer validate --strict
+          composer normalize --dry-run
+          composer psalm
+          composer test
+
+  prefer-lowest:
+    name: Prefer lowest
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: json, mbstring, fileinfo
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer update --prefer-lowest --prefer-stable --no-interaction --no-progress
+
+      - name: Build
+        run: composer build
+
+  coverage:
+    name: Coverage & Mutation
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.mutation == 'true') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: '8.4'
+          coverage: pcov
+          extensions: json, mbstring, fileinfo
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # restore/save are split on purpose: the combined actions/cache declares
+      # post-if: success(), so it never saves on a red job — and a red job is
+      # exactly when a property was falsified and the counterexample is worth
+      # keeping. The run_attempt suffix keeps a re-run from hitting an
+      # already-taken key and silently saving nothing.
+      - name: Restore property regression corpus
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/property-db
+          key: property-db-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: property-db-
+
+      - name: Test with coverage
+        run: composer test:coverage:ci
+        env:
+          PROPERTY_DB: ${{ github.workspace }}/build/property-db
+
+      - name: Save property regression corpus
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: build/property-db
+          key: property-db-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Mutation testing
+        # the narrow `mutation` filter decides: CHANGELOG-only PRs (releases)
+        # must still RUN this job so the required check reports, but they
+        # cannot change which mutants exist — skip the long part for them
+        if: needs.changes.outputs.mutation == 'true'
+        run: composer mutation
+
+  compatibility:
+    name: Backward compatibility
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.run == 'true') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          # roave compares the two revisions' sources statically, so one PHP
+          # version is enough; 8.5 is the newest it installs on (~8.4 || ~8.5).
+          php-version: '8.5'
+          coverage: none
+          extensions: json, mbstring, fileinfo, bcmath, intl
+          tools: composer:v2
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Backward compatibility check
+        # Real breaks pass only across an intended major bump: the top
+        # version heading in CHANGELOG.md declares a higher major than the
+        # latest tag. Minor/patch releases stay gated on a clean report.
+        run: |
+          LATEST="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -z "$LATEST" ]; then
+            echo "No previous tag - skipping BC check"
+            exit 0
+          fi
+          # 4.x pins mcp/sdk 0.8.x (GHSA-f4rf-6ghj-mhr6), which Composer's
+          # security blocking refuses to install: without this the baseline
+          # never installs, roave exits 1 and the major-bump branch below
+          # would pass without comparing anything. The baseline is only
+          # analysed, never run.
+          composer config --global --json policy.advisories.ignore-id '["PKSA-s52d-n7sx-trsg"]'
+          CODE=0
+          composer bc-check -- --from="$LATEST" || CODE=$?
+          if [ "$CODE" -eq 0 ]; then
+            exit 0
+          fi
+          NEXT="$(grep -m1 -oE '## [0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+          LATEST_MAJOR="${LATEST#v}"; LATEST_MAJOR="${LATEST_MAJOR%%.*}"
+          NEXT_MAJOR="${NEXT%%.*}"
+          if [ -n "$NEXT_MAJOR" ] && [ "$NEXT_MAJOR" -gt "$LATEST_MAJOR" ]; then
+            echo "CHANGELOG declares $NEXT - a new major over $LATEST; BC breaks are expected, treating as pass."
+            exit 0
+          fi
+          exit "$CODE"

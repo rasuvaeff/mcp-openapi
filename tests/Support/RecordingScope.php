@@ -1,0 +1,29 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Rasuvaeff\Mcp\OpenApi\Tests\Support;
+
+use Rasuvaeff\Mcp\OpenApi\InProcessScopeInterface;
+
+/**
+ * Scope double: records the enter/handle/leave interleaving so tests can
+ * assert the executor balances the scope around every nested call.
+ */
+final class RecordingScope implements InProcessScopeInterface
+{
+    /** @var list<string> */
+    public array $log = [];
+
+    #[\Override]
+    public function enter(): void
+    {
+        $this->log[] = 'enter';
+    }
+
+    #[\Override]
+    public function leave(): void
+    {
+        $this->log[] = 'leave';
+    }
+}

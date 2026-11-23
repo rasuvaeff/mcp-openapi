@@ -1,0 +1,181 @@
+# mcp-openapi
+
+Allow-listed OpenAPI 3.x operations as MCP tools, on `rasuvaeff/mcp`.
+
+## Install
+
+```bash
+composer require rasuvaeff/mcp-openapi
+```
+
+## Rules
+
+- Namespace `Rasuvaeff\Mcp\OpenApi`. Build through `OpenApiBridgeFactory::create()`
+  and pass the result to `McpServerFactory::create([], [$bridge])`; `SpecIndex` and
+  the executors are @internal.
+- Empty `operations` = nothing served. An unsupported allow-listed operation fails
+  the build (`Exception\InvalidSpecException`).
+- `Exception\InvalidToolArgumentException`: an argument cannot be put into the request.
+- A params key below belongs to `rasuvaeff/yii3-mcp`; elsewhere pass the matching
+  factory argument.
+
+## API reference
+
+### OpenAPI bridge (expose an existing REST API)
+
+```php
+use Rasuvaeff\Mcp\OpenApi\HttpOperationExecutor;
+use Rasuvaeff\Mcp\OpenApi\OpenApiServerConfigurator;
+use Rasuvaeff\Mcp\OpenApi\SpecIndex;
+
+$configurator = new OpenApiServerConfigurator(
+    spec: SpecIndex::fromFile('/path/openapi.json'),   // or fromJson()/new SpecIndex(array)
+    // or over HTTP (auth headers included): (new SpecLoader($psr18, $psr17, $headers))->fromUrl($url)
+    executor: new HttpOperationExecutor(
+        httpClient: $psr18, requestFactory: $psr17, streamFactory: $psr17,
+        baseUrl: 'https://api.example.com',
+        defaultHeaders: ['Authorization' => 'Bearer ...'],
+    ),
+    operations: ['getBlogTags'],   // allow-list of operationIds; empty = nothing
+    safeMethodsOnly: true,         // reject non-GET at build time (read-only bridge)
+    toolNames: ['getBlogTags' => 'blog_tags_list'],   // optional operationId => tool name
+    modifier: $myOperationModifier,   // optional OperationModifierInterface
+    dryRunOperations: ['createSubscriber'],   // optional: adds a `dryRun` boolean argument
+);
+$server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
+```
+
+- Tool name = operationId, or its `toolNames`/`tool_names` override — allow-list,
+  handler execution and delegated headers stay keyed by operationId, only the
+  served name changes; interceptors/visibility must reference the RENAMED
+  name. description = summary/description, inputSchema
+  from path/query parameters (+ `body` argument for application/json
+  requestBody). Local `#/components/...` $refs are resolved inline (chains
+  of up to 32 hops); external (URL/file) $refs pass through unresolved.
+- outputSchema is advertised in tools/list when the operation's lowest
+  concrete 2xx response has an application/json schema of type "object"
+  (OpenAPI 3.1's `type: ["object", "null"]` accepted the same way; $refs
+  resolved; canonicalized to type/properties/required/
+  additionalProperties/description, always to plain "object"). Array/scalar
+  responses and `2XX` wildcards are not advertised; JSON object payloads
+  still arrive as structuredContent either way.
+- Calls are real HTTP requests against the API — its middleware stack
+  (validation, rate limiting, auth) applies. Non-2xx =>
+  `OperationFailedException` => MCP tool error envelope. The message carries
+  at most 2000 bytes of the upstream body, cut on a character boundary; a body
+  that is not valid UTF-8 is replaced by `<non-UTF-8 response body, N bytes>`
+  (the envelope must stay JSON-encodable).
+- In-process execution for the application's OWN API: `openapi.executor =>
+  'psr15'` + `openapi.handler` (a RequestHandlerInterface FQCN) builds the
+  same request (method, URI, headers, JSON body) and calls the handler
+  in-process — no network I/O, one FPM worker instead of two. Optional
+  `request_attributes` (ExecutionRequestAttributesInterface: ExecutionIdentity
+  => request attributes; delegated headers still sent as headers) and
+  `in_process_scope` (InProcessScopeInterface: enter()/leave() around the
+  nested handle() — leave() runs even on failure — for resetting
+  request-scoped state the outer MCP request left behind). Response cap,
+  error mapping and `opaque_errors` identical to HTTP mode; `psr15` without
+  `handler`, psr15-only keys in `http` mode or an unsupported `executor`
+  value fail the server build.
+- Static `defaultHeaders` are service-token mode: upstream does NOT inherit the
+  MCP caller/RBAC identity. Do not expose tenant/user data with a broader token.
+  Delegated mode configures both ExecutionIdentityProviderInterface and
+  DelegatedHeaderProviderInterface; identity is immutable, headers resolve per
+  call, provider failure is fail-closed, raw MCP secrets are never passed.
+- Unknown operationId => `UnknownOperationException` at build time.
+- Non-GET operation with `safeMethodsOnly` => `UnsafeOperationException`
+  at build time.
+- A path and a query parameter sharing one name, or a parameter named
+  `body` alongside a request body => `InvalidSpecException` at build time
+  (tool arguments are keyed by name only).
+- URL parameters must have explicit scalar `string`/`integer`/`number`/`boolean`
+  schemas (an empty schema defaults to string) and standard serialization
+  (`simple` path, `form` query). Header/cookie parameters, external/non-scalar
+  schemas, custom style/explode and allowReserved=true =>
+  `InvalidSpecException` when selected. Put fixed upstream headers in
+  `HttpOperationExecutor::defaultHeaders`; use a custom tool for richer input.
+- Duplicate operationId values => `InvalidSpecException` while indexing.
+- operationId (or its `toolNames` rename) must match `^[A-Za-z0-9._/-]{1,64}$`
+  to become a tool name => `InvalidSpecException` when selected (mcp/sdk
+  itself only logs a warning and registers the tool anyway on a mismatch).
+- `toolNames` maps operationId => tool name; an operationId in `toolNames`
+  absent from `operations` => `InvalidArgumentException` at build time; two
+  operations resolving to the same final name => `InvalidSpecException`.
+- `OperationModifierInterface::modify(Operation $operation, Tool $tool): Tool`
+  runs once per bridged operation, after the `toolNames` rename — returns a
+  changed Tool (description, annotations, a further name change). A name
+  change is validated and checked for collisions exactly like a `toolNames`
+  rename (same exceptions). `Operation` is a read-only `@api` VO (operationId,
+  method, path, description, parameters, requestBodySchema,
+  requestBodyRequired, outputSchema) — construct it yourself only in tests.
+  Config: `openapi.operation_modifier` (FQCN, DI-resolved).
+- Every GET operation is served with `annotations: {readOnlyHint: true}` —
+  no configuration. OpenAPI `tags` are propagated into the tool's `_meta`
+  (`{"rasuvaeff/yii3-mcp": {"tags": [...]}}`); read by declarative `tag:`
+  visibility patterns (see below).
+- A `null` argument for a path/query parameter is skipped like an omitted
+  one; scalar parameter schemas also accept OpenAPI 3.1's nullable union
+  notation (`{"type": ["string", "null"]}`) alongside the plain 3.0 type
+  string.
+- A path argument is rejected at call time when it is empty or `.`, or when
+  it CONTAINS `..`, `/` or `\` (route escape out of the allow-list: `%2F` is
+  decoded back into a separator by some upstreams, so `../..` climbs up too;
+  `""` turns an item route into the collection route). Single dots are fine
+  (`v1.2`). The base URL must not
+  embed credentials (userinfo) or carry a query string/fragment — dry-run
+  previews return the full URL to the caller.
+- Via config-plugin: params `openapi.spec_path` (file path or http(s) URL) /
+  `base_url` / `operations` / `tool_names` / `operation_modifier` / `headers`
+  (operation calls only) / `spec_headers` (spec fetch only, empty default —
+  separate credential scopes so an API token never reaches a foreign spec
+  host; a spec URL with userinfo is rejected) /
+  `cache_ttl` (PSR-16, raw document, 0 disables) / `max_response_bytes`
+  (upstream body cap, incremental read, default 4 MiB) / `opaque_errors`
+  (suppress upstream error bodies) / `identity_provider` /
+  `delegated_header_provider` / `dry_run` (list of operationIds) /
+  `multi_segment_path_params` (path parameter name => segment budget; empty
+  default keeps every path argument single-segment) / `array_query_style`
+  ('repeat' name=a&name=b | 'brackets' name[]=a&name[]=b | 'comma' name=a,b;
+  empty = per parameter from its declared explode) / `array_query_params`
+  (operationId => parameter => style). `type: array` query parameters with scalar
+  items are bridged as array arguments (items/enum/minItems/maxItems kept and
+  re-validated before the call); arrays in a path, object/nested items, style
+  other than form and allowReserved fail the server build.
+- `OpenApi\OpenApiBridgeFactory::create(spec:, baseUrl:, httpClient:,
+  requestFactory:, streamFactory:, operations:, …)` returns a configured
+  `OpenApiServerConfigurator` WITHOUT a Yii3 application: `spec` takes a file
+  path, an http(s) URL or a decoded document; every `openapi` params option is
+  a named argument (`headers`, `specHeaders`, `specCache`, `specCacheTtl`,
+  `safeMethodsOnly`, `toolNames`, `modifier`, `dryRunOperations`,
+  `identityProvider`, `delegatedHeaderProvider`, `maxResponseBytes`,
+  `opaqueErrors`, `multiSegmentPathParams`, `inProcessHandler`,
+  `serverRequestFactory`, `requestAttributes`, `inProcessScope`).
+  `SpecIndex` and the executors stay
+  `@internal`; the config-plugin path calls this
+  same factory.
+- Only `OperationFailedException` and `Exception\InvalidToolArgumentException`
+  (non-scalar URL parameter, route-escaping or missing path argument,
+  malformed `dryRun`) reach the caller. A bare `InvalidArgumentException` from
+  the PSR-17/PSR-18 stack — unparseable request URI, non-RFC-7230 delegated
+  header name — describes the deployment and stays behind the SDK's generic
+  internal error.
+- Bridged failures reach the client as a tool-error envelope naming the SERVED
+  tool name (after `tool_names` and the modifier), not the upstream
+  operationId: `Tool "blog_tags_list" failed with HTTP 404: …`. The dry-run
+  preview payload still reports `operationId` — it documents the upstream
+  request, not the call the client made.
+- Dry-run: an operationId in `dry_run` (or `dryRunOperations`) gets an extra
+  `dryRun: boolean` inputSchema argument. Calling with `dryRun: true` returns
+  the planned request (`operationId`, `method`, `url`, `body`) as plain text —
+  never as `structuredContent`, so it never conflicts with the operation's
+  declared `outputSchema` — without sending it and without upstream headers
+  leaving the process. Checked twice, fail-closed: an operationId absent from
+  `dry_run` ignores a `dryRun` argument entirely and always executes for real.
+  On a dry-run-enabled operation a non-boolean `dryRun` value is rejected
+  with an error, never executed for real.
+  Orthogonal to `safeMethodsOnly` — does not expose an operation the safety
+  gate would otherwise reject. An unknown operationId in `dry_run` =>
+  `InvalidArgumentException` at build time (same as `toolNames`). A dry-run
+  call still passes through the full interceptor chain (tool-call budget,
+  RBAC/audit, caching, size limit).
+
