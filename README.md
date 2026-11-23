@@ -16,6 +16,9 @@ a PSR-18 client (or a PSR-15 handler) and PSR-17 factories are enough. Using Yii
 
 > **Using an AI coding assistant?** [llms.txt](llms.txt) contains a compact API
 > reference you can share with the model. Contributors: see [AGENTS.md](AGENTS.md).
+> Projects using the [llm/skills](https://github.com/roxblnfk/skills) Composer
+> plugin also get this package's agent skill synced into `.agents/skills/`
+> automatically on install.
 
 ## Requirements
 

@@ -230,5 +230,7 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
 
 - Update `README.md` **and `README.ru.md`** (both languages, same commit; and
   `examples/` if usage changed), `llms.txt` and `CHANGELOG.md`.
+- Keep `resources/skills/rasuvaeff-mcp-openapi/SKILL.md` current in the same commit: it
+  ships to consumers' agents, and a stale safety rule there is followed.
 - Re-run `composer build`; if the change affects public API or release safety,
   also run `make release-check`. Paste the output.

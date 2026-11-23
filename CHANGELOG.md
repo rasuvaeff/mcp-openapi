@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-11-23
 
 - Initial package: the OpenAPI bridge extracted from `rasuvaeff/yii3-mcp`,
   under `Rasuvaeff\Mcp\OpenApi`.
@@ -18,3 +18,4 @@
   - header parameters named `Accept`, `Authorization` and `Content-Type` are ignored,
     as OpenAPI prescribes (5.x refused the operation);
   - in OpenAPI 3.0 the request body of GET, HEAD and DELETE is ignored.
+- **Added:** agent skill `rasuvaeff-mcp-openapi` in `resources/skills`.

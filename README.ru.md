@@ -16,6 +16,9 @@
 
 > **Пользуетесь AI coding assistant?** [llms.txt](llms.txt) содержит компактную
 > API-справку для модели. Для контрибьюторов: [AGENTS.md](AGENTS.md).
+> Проекты с Composer-плагином [llm/skills](https://github.com/roxblnfk/skills)
+> дополнительно получают agent-скилл этого пакета в `.agents/skills/`
+> автоматически при установке.
 
 ## Требования
 
