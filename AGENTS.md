@@ -195,16 +195,9 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   (`Tool`, `ToolAnnotations`, `Registry`, `NameValidator`) was byte-for-byte
   unchanged; do the same verification on any future bump, don't assume a minor
   is safe from the changelog alone.
-- **Empty JSON Schema `properties` must serialize as `{}`.** The SDK
-  normalizes `[]` → `\stdClass` only inside `Tool::fromArray()`; the OpenAPI
-  bridge builds `Tool` directly, so `InputSchemaBuilder` does it explicitly and
-  `SpecIndex` omits an empty `properties` from `outputSchema`. `[]` on the wire
-  makes clients reject the entire `tools/list` (`expected record, received
-  array`). The SDK's own `ToolInputSchema` docblock contradicts what the SDK
-  stores there — corrected by `stubs/Tool.phpstub` (registered in
-  `psalm.xml`), NOT by a suppression: the stub declares the honest accepted
-  type (`array<string, mixed>|\stdClass` for `properties`). Revisit the stub
-  whenever the SDK pin moves.
+- **Empty JSON Schema `properties` must serialize as `{}`.** A tool definition
+  built here passes `\stdClass` (or leaves the SDK to normalize the empty array):
+  clients reject `"properties": []` and with it the whole `tools/list`.
 - **Some classes are covered by property tests, and the properties are the
   contract — not the examples.** `Utf8::cut()` (budget, encodability, prefix
   relation), `OpenApi\ToolNameValidator` (charset + length; stated

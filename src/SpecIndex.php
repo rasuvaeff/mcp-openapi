@@ -274,7 +274,7 @@ final readonly class SpecIndex
             description: $compiled->description ?? $compiled->summary ?? '',
             parameters: $parameters,
             requestBodySchema: is_array($body) && $body !== [] ? $defs->inline($body) : null,
-            requestBodyRequired: $compiled->requestBody['required'] ?? false,
+            requestBodyRequired: ($compiled->requestBody['required'] ?? false) === true,
             outputSchema: (new OutputSchemaProjector())->project($compiled->responses),
             tags: $compiled->tags,
         );
