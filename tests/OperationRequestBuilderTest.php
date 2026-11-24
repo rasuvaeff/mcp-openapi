@@ -62,6 +62,45 @@ final class OperationRequestBuilderTest
         ];
     }
 
+    #[DataProvider('floatProvider')]
+    public function aFloatIsSentWithEveryDigit(float $value, string $expected): void
+    {
+        $operation = $this->operation([$this->query('ratio', ['type' => 'number'])]);
+
+        Assert::same(
+            (new OperationRequestBuilder(baseUrl: 'https://api.test'))->plan($operation, ['ratio' => $value], 'getItems')->url,
+            'https://api.test/items?ratio=' . $expected,
+        );
+    }
+
+    public static function floatProvider(): iterable
+    {
+        yield 'seventeen digits' => [-1.5636843559396638, '-1.5636843559396638'];
+        yield 'coordinate' => [55.75582600000001, '55.75582600000001'];
+        yield 'whole' => [5.0, '5'];
+        yield 'sum that is not exact' => [0.1 + 0.2, '0.30000000000000004'];
+    }
+
+    #[DataProvider('nonFiniteProvider')]
+    public function aNonFiniteFloatIsAnInvalidArgument(float $value): void
+    {
+        $operation = $this->operation([$this->query('ratio', ['type' => 'number'])]);
+        $caught = null;
+
+        try {
+            (new OperationRequestBuilder(baseUrl: 'https://api.test'))->plan($operation, ['ratio' => $value], 'getItems');
+        } catch (InvalidToolArgumentException $caught) {
+        }
+
+        Assert::notNull($caught);
+    }
+
+    public static function nonFiniteProvider(): iterable
+    {
+        yield 'infinity' => [INF];
+        yield 'not a number' => [NAN];
+    }
+
     #[DataProvider('arrayTypeProvider')]
     public function onlyABareArrayOrANullableArrayUnionIsSerializedAsAnArray(mixed $type, bool $isArray): void
     {

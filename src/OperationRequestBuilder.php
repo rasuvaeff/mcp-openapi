@@ -499,7 +499,9 @@ final readonly class OperationRequestBuilder
     {
         return match (true) {
             is_string($value) => $value,
-            is_int($value), is_float($value) => (string) $value,
+            is_int($value) => (string) $value,
+            // not a string cast: that follows the `precision` ini and drops digits
+            is_float($value) && is_finite($value) => json_encode($value, JSON_THROW_ON_ERROR),
             is_bool($value) => $value ? 'true' : 'false',
             default => throw new InvalidToolArgumentException(sprintf(
                 'Argument "%s" of tool "%s" must be a scalar',
