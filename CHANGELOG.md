@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-11-24
 
 - **Fixed:** a float path or query argument keeps every digit; it followed the
   `precision` ini before, so `-1.5636843559396638` was sent as `-1.5636843559397`
