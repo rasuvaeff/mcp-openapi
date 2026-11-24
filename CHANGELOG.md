@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 — 2026-11-24
+
+- **Fixed:** a float path or query argument keeps every digit; it followed the
+  `precision` ini before, so `-1.5636843559396638` was sent as `-1.5636843559397`
+  (#1). A non-finite float is an invalid argument.
+
 ## 0.1.0 — 2026-11-23
 
 - Initial package: the OpenAPI bridge extracted from `rasuvaeff/yii3-mcp`,

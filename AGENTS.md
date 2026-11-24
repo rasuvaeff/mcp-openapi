@@ -41,8 +41,6 @@ Or with Make: `make build`, `make cs-fix`, `make psalm`, `make test`,
   `webhooks`, security schemes) and projects compiled operations; it must not parse
   schemas or references. `LocalDefinitions` only undoes the compiler's `$defs`
   sharing so tool schemas stay readable to clients that do not follow references.
-- **Local 6.0 work before `rasuvaeff/mcp` is published** uses
-  `COMPOSER=composer.local.json` (untracked, path repository on `../mcp`).
 - **The two OpenAPI executors share `OperationRequestBuilder` and
   `OperationResponseDecoder` and must never grow transport-specific logic that
   the other one misses.** Everything a caller can observe before the send
