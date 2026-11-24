@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Added:** `OpenApiConfiguratorResolver`: the interpretation of the `openapi` params,
+  moved here from `rasuvaeff/yii3-mcp`.
+
 ## 0.1.2 — 2026-11-24
 
 - **Fixed:** a dry run works on the stateless era for an operation with an output
