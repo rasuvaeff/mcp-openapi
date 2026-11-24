@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 — 2026-11-24
 
 - **Fixed:** a dry run works on the stateless era for an operation with an output
   schema: the preview is text content on every revision. The SDK took it as
