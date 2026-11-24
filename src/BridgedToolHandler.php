@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Rasuvaeff\Mcp\OpenApi;
 
+use Mcp\Schema\Content\TextContent;
 use Mcp\Server\ClientGateway;
 use Mcp\Server\Exception\ToolCallException;
 use Mcp\Server\Handler\ToolHandlerInterface;
@@ -28,7 +29,16 @@ final readonly class BridgedToolHandler implements ToolHandlerInterface
     public function execute(array $arguments, ClientGateway $gateway): mixed
     {
         try {
-            return $this->executor->execute($this->operation, $arguments, $this->dryRunnable, $this->toolName);
+            /** @var mixed $result */
+            $result = $this->executor->execute($this->operation, $arguments, $this->dryRunnable, $this->toolName);
+
+            // A preview is not the operation's output. As a bare string it
+            // would become structuredContent on the stateless era whenever the
+            // tool declares an outputSchema, and fail against that schema; as
+            // content it is text on every revision.
+            return $this->dryRunnable && ($arguments[InputSchemaBuilder::DRY_RUN_ARGUMENT] ?? false) === true && is_string($result)
+                ? new TextContent($result)
+                : $result;
         } catch (OperationFailedException|InvalidToolArgumentException $e) {
             // The SDK's CallToolHandler turns ONLY ToolCallException into a
             // tool-error envelope carrying the message; every other Throwable

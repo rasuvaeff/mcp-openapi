@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace Rasuvaeff\Mcp\OpenApi\Tests;
 
 use InvalidArgumentException;
+use Mcp\Client\Stateless\HeaderFactory;
+use Mcp\Client\Stateless\RequestEnvelope;
+use Mcp\Client\Stateless\ToolCatalog;
+use Mcp\Schema\ClientCapabilities;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\Implementation;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server\Session\InMemorySessionStore;
@@ -546,6 +552,35 @@ final class OpenApiServerConfiguratorTest
         $plan = json_decode((string) $body['result']['content'][0]['text'], associative: true, flags: JSON_THROW_ON_ERROR);
         Assert::true($plan['dryRun']);
         Assert::same($plan['method'], 'GET');
+    }
+
+    public function dryRunCallWorksOnTheStatelessEraWithAnOutputSchema(): void
+    {
+        $client = $this->client();
+        $action = $this->action($client, ['getBlogTagBySlug'], dryRunOperations: ['getBlogTagBySlug']);
+        $version = ProtocolVersion::V2026_07_28;
+        $json = json_encode((new RequestEnvelope(
+            $version,
+            new ClientCapabilities(),
+            new Implementation(name: 'stateless', version: '1.0'),
+        ))->stamp([
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'tools/call',
+            'params' => ['name' => 'getBlogTagBySlug', 'arguments' => ['slug' => 'php', 'dryRun' => true]],
+        ]), JSON_THROW_ON_ERROR);
+
+        $response = $action->handle(new ServerRequest('POST', 'http://localhost/mcp', [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json, text/event-stream',
+            ...(new HeaderFactory(new ToolCatalog()))->forMessage(json_decode($json, associative: true), $version),
+        ], $json));
+
+        verify(fn() => $client->sendRequest(Arg::any()), never: true);
+        $result = json_decode((string) $response->getBody(), associative: true, flags: JSON_THROW_ON_ERROR)['result'];
+        Assert::false($result['isError'] ?? false);
+        Assert::false(isset($result['structuredContent']));
+        Assert::same(json_decode((string) $result['content'][0]['text'], associative: true)['url'], 'https://api.test/rest/blog-tag/php');
     }
 
     public function dryRunFlagOnANonDryRunnableOperationIsIgnored(): void
