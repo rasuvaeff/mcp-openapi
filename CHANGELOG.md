@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** a dry run works on the stateless era for an operation with an output
+  schema: the preview is text content on every revision. The SDK took it as
+  `structuredContent` there and refused it (#3).
+
 ## 0.1.1 — 2026-11-24
 
 - **Fixed:** a float path or query argument keeps every digit; it followed the
