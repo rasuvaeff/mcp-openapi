@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.3 — 2026-11-25
 
 - **Added:** `OpenApiConfiguratorResolver`: the interpretation of the `openapi` params,
-  moved here from `rasuvaeff/yii3-mcp`.
+  moved here from `rasuvaeff/yii3-mcp` (#5).
 
 ## 0.1.2 — 2026-11-24
 
