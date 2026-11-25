@@ -92,6 +92,7 @@ Checked when the server is built, for the allow-listed operations:
 |---|---|
 | `OpenApiBridgeFactory` | builds the bridge from a spec and PSR services |
 | `OpenApiServerConfigurator` | registers the allow-listed operations on the SDK builder |
+| `OpenApiConfiguratorResolver` | for framework packages: the `openapi` params → the bridge, or null while it is disabled |
 | `SpecLoader` | fetches a URL spec, with an optional PSR-16 cache |
 | `Operation`, `OperationModifierInterface` | customize a tool per operation |
 | `DelegatedHeaderProviderInterface` | upstream headers for the current execution identity |

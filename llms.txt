@@ -180,3 +180,8 @@ $server = $factory->create([], [$configurator]);  // ServerConfiguratorInterface
   call still passes through the full interceptor chain (tool-call budget,
   RBAC/audit, caching, size limit).
 
+### Framework packages: OpenApiConfiguratorResolver
+
+`(new OpenApiConfiguratorResolver($container, $openapiParams))->resolve()` builds the
+configurator from the `openapi` params, resolving application services only when a
+configured feature needs them; null while `spec_path` or `operations` is empty.

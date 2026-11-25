@@ -92,6 +92,7 @@ handler самого приложения без сети; `httpClient` и `requ
 |---|---|
 | `OpenApiBridgeFactory` | собирает мост из спецификации и PSR-сервисов |
 | `OpenApiServerConfigurator` | регистрирует разрешённые операции в SDK builder |
+| `OpenApiConfiguratorResolver` | для пакетов фреймворков: параметры `openapi` → мост либо null, пока он выключен |
 | `SpecLoader` | загружает спецификацию по URL, с опциональным PSR-16 кэшем |
 | `Operation`, `OperationModifierInterface` | настройка tool для отдельной операции |
 | `DelegatedHeaderProviderInterface` | заголовки upstream для текущей идентичности |
